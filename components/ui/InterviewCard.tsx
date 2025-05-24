@@ -3,7 +3,7 @@ import dayjs from 'dayjs'
 import Image from 'next/image'
 import Link from 'next/link'
 
-import { getRandomInterviewCover } from '@/ai_mock_interviews/lib/utils'
+import { getRandomInterviewCover } from '@/app/lib/utils'
 import { Button } from './button'
 import DisplayTechIcons from './DisplayTechIcons'
 

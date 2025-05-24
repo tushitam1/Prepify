@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
-import { getRandomInterviewCover } from '@/ai_mock_interviews/lib/utils';
-import { db } from '@/ai_mock_interviews/firebase/admin';
+import { getRandomInterviewCover } from '@/app/lib/utils';
+import { db } from '@/app/firebase/admin';
 
 export async function GET() {
   return NextResponse.json({
