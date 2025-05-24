@@ -1,11 +1,9 @@
-// app/api/vapi/generate/route.ts
 import { NextResponse } from 'next/server';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 import { getRandomInterviewCover } from '@/ai_mock_interviews/lib/utils';
+import { db } from '@/ai_mock_interviews/firebase/admin';
 
-import { db } from "@/ai_mock_interviews/firebase/admin";
-// GET handler (simple test)
 export async function GET() {
   return NextResponse.json({
     success: true,
@@ -13,12 +11,11 @@ export async function GET() {
   });
 }
 
-// ✅ FIXED: "async" typo and added logic for POST handler
 export async function POST(request: Request) {
-  const { type, role, level, techstack, amount, userid, } = await request.json();
+  const { type, role, level, techstack, amount, userid } = await request.json();
 
   try {
-    const { text:questions } = await generateText({
+    const { text: questions } = await generateText({
       model: google('gemini-2.0-flash-001'),
       prompt: `Prepare questions for a job interview.
 The job role is ${role}.
@@ -34,22 +31,23 @@ Return the questions formatted like this:
 Thank you! <3`,
     });
 
-    return NextResponse.json({
-      success: true,
-      data: text,
-    });
-    const interview={
-        role,type,level,techstack:techstack.split(','),
-        questions:JSON.parse(questions),
-        userId:userid,
-        finalized:true,
-        coverImage:getRandomInterviewCover(),
-        createdAt:new Date(),toISOString()
-    }
-    await db.collection("interviews").add(interview);
-return Response.json({success:true},{status:200})
+    const interview = {
+      role,
+      type,
+      level,
+      techstack: techstack.split(','),
+      questions: JSON.parse(questions),
+      userId: userid,
+      finalized: true,
+      coverImage: getRandomInterviewCover(),
+      createdAt: new Date().toISOString()
+    };
+
+    await db.collection('interviews').add(interview);
+
+    return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error(error); // fixed syntax
+    console.error(error);
     return NextResponse.json(
       { success: false, error: (error as Error).message },
       { status: 500 }
