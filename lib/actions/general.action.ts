@@ -2,19 +2,16 @@
 
 import { generateObject } from "ai";
 import { google } from "@ai-sdk/google";
-
-import { db } from "@/firebase/admin";
-import { feedbackSchema } from "@/constants";
+import { db } from "@/app/firebase/admin";
+import { feedbackSchema } from "@/app/constants";
+import { Interview, Feedback } from "@/app/types";
 
 export async function createFeedback(params: CreateFeedbackParams) {
   const { interviewId, userId, transcript, feedbackId } = params;
 
   try {
     const formattedTranscript = transcript
-      .map(
-        (sentence: { role: string; content: string }) =>
-          `- ${sentence.role}: ${sentence.content}\n`
-      )
+      .map((line) => `- ${line.role}: ${line.content}\n`)
       .join("");
 
     const { object } = await generateObject({
@@ -23,24 +20,23 @@ export async function createFeedback(params: CreateFeedbackParams) {
       }),
       schema: feedbackSchema,
       prompt: `
-        You are an AI interviewer analyzing a mock interview. Your task is to evaluate the candidate based on structured categories. Be thorough and detailed in your analysis. Don't be lenient with the candidate. If there are mistakes or areas for improvement, point them out.
+        You are an AI interviewer analyzing a mock interview. Your task is to evaluate the candidate based on structured categories. Be thorough and detailed. Don't be lenient.
         Transcript:
         ${formattedTranscript}
-
-        Please score the candidate from 0 to 100 in the following areas. Do not add categories other than the ones provided:
-        - **Communication Skills**: Clarity, articulation, structured responses.
-        - **Technical Knowledge**: Understanding of key concepts for the role.
-        - **Problem-Solving**: Ability to analyze problems and propose solutions.
-        - **Cultural & Role Fit**: Alignment with company values and job role.
-        - **Confidence & Clarity**: Confidence in responses, engagement, and clarity.
-        `,
+        Please score the candidate from 0 to 100 in these areas:
+        - Communication Skills
+        - Technical Knowledge
+        - Problem-Solving
+        - Cultural & Role Fit
+        - Confidence & Clarity
+      `,
       system:
-        "You are a professional interviewer analyzing a mock interview. Your task is to evaluate the candidate based on structured categories",
+        "You are a professional interviewer analyzing a mock interview and assigning scores to the candidate.",
     });
 
     const feedback = {
-      interviewId: interviewId,
-      userId: userId,
+      interviewId,
+      userId,
       totalScore: object.totalScore,
       categoryScores: object.categoryScores,
       strengths: object.strengths,
@@ -49,61 +45,60 @@ export async function createFeedback(params: CreateFeedbackParams) {
       createdAt: new Date().toISOString(),
     };
 
-    let feedbackRef;
-
-    if (feedbackId) {
-      feedbackRef = db.collection("feedback").doc(feedbackId);
-    } else {
-      feedbackRef = db.collection("feedback").doc();
-    }
+    const feedbackRef = feedbackId
+      ? db.collection("feedback").doc(feedbackId)
+      : db.collection("feedback").doc();
 
     await feedbackRef.set(feedback);
 
     return { success: true, feedbackId: feedbackRef.id };
   } catch (error) {
-    console.error("Error saving feedback:", error);
+    console.error("❌ Error saving feedback:", error);
     return { success: false };
   }
 }
 
 export async function getInterviewById(id: string): Promise<Interview | null> {
-  const interview = await db.collection("interviews").doc(id).get();
-
-  return interview.data() as Interview | null;
+  const doc = await db.collection("interviews").doc(id).get();
+  return doc.exists ? { id: doc.id, ...doc.data() } as Interview : null;
 }
 
-export async function getFeedbackByInterviewId(
-  params: GetFeedbackByInterviewIdParams
-): Promise<Feedback | null> {
+export async function getFeedbackByInterviewId(params: {
+  interviewId: string;
+  userId: string;
+}): Promise<Feedback | null> {
   const { interviewId, userId } = params;
-
-  const querySnapshot = await db
+  const snapshot = await db
     .collection("feedback")
     .where("interviewId", "==", interviewId)
     .where("userId", "==", userId)
     .limit(1)
     .get();
 
-  if (querySnapshot.empty) return null;
+  if (snapshot.empty) return null;
 
-  const feedbackDoc = querySnapshot.docs[0];
-  return { id: feedbackDoc.id, ...feedbackDoc.data() } as Feedback;
+  const doc = snapshot.docs[0];
+  return { id: doc.id, ...doc.data() } as Feedback;
 }
 
-export async function getLatestInterviews(
-  params: GetLatestInterviewsParams
-): Promise<Interview[] | null> {
+export async function getLatestInterviews(params: {
+  userId: string;
+  limit?: number;
+}): Promise<Interview[] | null> {
   const { userId, limit = 20 } = params;
 
-  const interviews = await db
+  const snapshot = await db
     .collection("interviews")
-    .orderBy("createdAt", "desc")
     .where("finalized", "==", true)
     .where("userId", "!=", userId)
+    .orderBy("userId")
+    .orderBy("createdAt", "desc")
     .limit(limit)
     .get();
 
-  return interviews.docs.map((doc) => ({
+  if (snapshot.empty) return null;
+
+  return snapshot.docs.map((doc) => ({
     id: doc.id,
     ...doc.data(),
   })) as Interview[];
@@ -112,13 +107,15 @@ export async function getLatestInterviews(
 export async function getInterviewsByUserId(
   userId: string
 ): Promise<Interview[] | null> {
-  const interviews = await db
+  const snapshot = await db
     .collection("interviews")
     .where("userId", "==", userId)
     .orderBy("createdAt", "desc")
     .get();
 
-  return interviews.docs.map((doc) => ({
+  if (snapshot.empty) return null;
+
+  return snapshot.docs.map((doc) => ({
     id: doc.id,
     ...doc.data(),
   })) as Interview[];

@@ -47,7 +47,7 @@ interface InterviewCardProps {
   createdAt?: string;
 }
 
-interface AgentProps {
+export interface AgentProps {
   userName: string;
   userId?: string;
   interviewId?: string;

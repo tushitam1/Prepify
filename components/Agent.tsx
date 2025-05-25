@@ -4,9 +4,8 @@ import React, { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
-import { vapi } from '@/lib/vapi.sdk'
+import Vapi from '@vapi-ai/web'
 
-// Types and enums
 enum CallStatus {
   INACTIVE = 'INACTIVE',
   CONNECTING = 'CONNECTING',
@@ -25,23 +24,15 @@ interface AgentProps {
   type: string
 }
 
-type StartOptions = {
-  variables: {
-    role: string
-    Type: string
-    Level: string
-    Techstack: string
-    Amount: string
-  }
-}
-
 export const Agent = ({ userName, userId, type }: AgentProps) => {
   const router = useRouter()
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [callStatus, setCallStatus] = useState<CallStatus>(CallStatus.INACTIVE)
   const [messages, setMessages] = useState<SavedMessage[]>([])
 
-  // Redirect to home after call finishes
+  // Initialize Vapi instance
+  const vapi = new Vapi(process.env.NEXT_PUBLIC_VAPI_KEY!)
+
   useEffect(() => {
     if (callStatus === CallStatus.FINISHED) {
       router.push('/')
@@ -49,29 +40,44 @@ export const Agent = ({ userName, userId, type }: AgentProps) => {
   }, [callStatus, router])
 
   const handleDisconnect = async () => {
-    await vapi.stop()
+    if (vapi?.stop) {
+      await vapi.stop()
+    }
     setCallStatus(CallStatus.FINISHED)
   }
 
   const handleCall = async () => {
     try {
       setCallStatus(CallStatus.CONNECTING)
-      console.log("API Key:", process.env.NEXT_PUBLIC_VAPI_KEY);
-console.log("Workflow ID:", process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID);
 
-     await vapi.start(
-  process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!,
-  {
-   variables: {
-    role: 'frontend developer',
-    Type: type,
-    Level: 'mid-level',
-    Techstack: 'react, typescript',
-    Amount: '5',
-    },
-  } as StartOptions
-)
+      // Request microphone access
+      await navigator.mediaDevices.getUserMedia({ audio: true })
 
+      // Start the call with assistant configuration
+      await vapi.start({
+        model: {
+          provider: 'openai',
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'system',
+              content: `You are a helpful AI assistant conducting a ${type} interview for a frontend developer position.`,
+            },
+          ],
+        },
+        voice: {
+          provider: 'deepgram',
+          model: 'aura-2',
+          voiceId: 'thalia',
+        },
+        transcriber: {
+          provider: 'deepgram',
+          model: 'nova-2',
+        },
+        firstMessage: `Hello ${userName}, let's begin your ${type} interview.`,
+      })
+
+      setCallStatus(CallStatus.ACTIVE)
     } catch (err) {
       console.error('Error starting call:', err)
       setCallStatus(CallStatus.FINISHED)
@@ -79,6 +85,8 @@ console.log("Workflow ID:", process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID);
   }
 
   useEffect(() => {
+    if (!vapi) return
+
     const onCallStart = () => setCallStatus(CallStatus.ACTIVE)
     const onCallEnd = () => setCallStatus(CallStatus.FINISHED)
     const onSpeechStart = () => setIsSpeaking(true)
@@ -110,7 +118,7 @@ console.log("Workflow ID:", process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID);
       vapi.off('speech-end', onSpeechEnd)
       vapi.off('error', onError)
     }
-  }, [])
+  }, [vapi])
 
   const lastMessage = messages[messages.length - 1]
 
